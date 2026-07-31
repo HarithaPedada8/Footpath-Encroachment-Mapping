@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { db, collection, addDoc, onSnapshot, updateDoc, doc } from './firebase';
+import LocationPicker from './LocationPicker';
 
 const STORAGE_KEY = 'footpath-encroachments-demo';
 
@@ -8,7 +9,8 @@ const initialForm = {
   phone: '',
   encroachmentType: 'Vehicle Parking',
   description: '',
-  beforeImage: ''
+  beforeImage: '',
+  location: null
 };
 
 const authorityForm = {
@@ -73,8 +75,8 @@ function App() {
     const trimmedPhone = publicForm.phone.trim();
     const description = publicForm.description.trim();
 
-    if (!trimmedName || !trimmedPhone || !description || !publicForm.beforeImage) {
-      setMessage('Please complete all fields and upload a before image.');
+    if (!trimmedName || !trimmedPhone || !description || !publicForm.beforeImage || !publicForm.location) {
+      setMessage('Please complete all fields, pick a location on the map, and upload a before image.');
       return;
     }
 
@@ -90,6 +92,7 @@ function App() {
       encroachmentType: publicForm.encroachmentType,
       description,
       beforeImage: publicForm.beforeImage,
+      location: publicForm.location,
       status: 'Sent',
       adminNote: 'Awaiting review by GVMC authority.',
       createdAt: new Date().toLocaleString()
@@ -222,6 +225,10 @@ function App() {
               <textarea maxLength="50" value={publicForm.description} onChange={(event) => setPublicForm((current) => ({ ...current, description: event.target.value }))} placeholder="Describe the issue in 50 characters or fewer" />
               <small>{publicForm.description.length}/50 characters</small>
             </label>
+            <LocationPicker
+              value={publicForm.location}
+              onChange={(location) => setPublicForm((current) => ({ ...current, location }))}
+            />
             <label>
               Before Image Upload
               <input type="file" accept="image/*" onChange={handleImageUpload} />
@@ -246,6 +253,9 @@ function App() {
                 <article key={item.id} className="report-card">
                   <div className="report-row"><strong>Type:</strong> {item.encroachmentType}</div>
                   <div className="report-row"><strong>Description:</strong> {item.description}</div>
+                  {item.location ? (
+                    <div className="report-row"><strong>Location:</strong> {item.location.lat.toFixed(4)}, {item.location.lng.toFixed(4)}</div>
+                  ) : null}
                   <div className="report-row"><strong>Status:</strong> {item.status}</div>
                   <div className="report-row"><strong>Authority Note:</strong> {item.adminNote}</div>
                   {item.beforeImage ? <img className="preview-image" src={item.beforeImage} alt="Before upload" /> : null}
@@ -289,6 +299,9 @@ function App() {
                   <div className="report-row"><strong>Phone:</strong> {item.phone}</div>
                   <div className="report-row"><strong>Type:</strong> {item.encroachmentType}</div>
                   <div className="report-row"><strong>Issue:</strong> {item.description}</div>
+                  {item.location ? (
+                    <div className="report-row"><strong>Location:</strong> {item.location.lat.toFixed(4)}, {item.location.lng.toFixed(4)}</div>
+                  ) : null}
                   <div className="report-row"><strong>Status:</strong> {item.status}</div>
                   <div className="report-row"><strong>Note:</strong> {item.adminNote}</div>
                   {item.beforeImage ? <img className="preview-image" src={item.beforeImage} alt="Complaint preview" /> : null}

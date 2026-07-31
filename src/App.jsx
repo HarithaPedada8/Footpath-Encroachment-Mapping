@@ -1,39 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { db, collection, addDoc, onSnapshot, updateDoc, doc } from './firebase';
 
-const STORAGE_KEY = 'footpath-encroachments-demo';
-const CHANNEL_NAME = 'footpath-encroachments-channel';
-
-const readStoredComplaints = () => {
-  if (typeof window === 'undefined') return [];
-
-  try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    return stored ? JSON.parse(stored) : [];
-  } catch {
-    return [];
-  }
-};
-
-const persistComplaints = (items) => {
-  if (typeof window === 'undefined') return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-};
-
-const broadcastComplaints = (items) => {
-  if (typeof window === 'undefined') return;
-
-  persistComplaints(items);
-
-  if ('BroadcastChannel' in window) {
-    const channel = new window.BroadcastChannel(CHANNEL_NAME);
-    channel.postMessage(items);
-    channel.close();
-  }
-
-  window.dispatchEvent(new CustomEvent('footpath-complaints-updated', { detail: items }));
-};
-
 const initialForm = {
   name: '',
   phone: '',
@@ -51,69 +18,19 @@ function App() {
   const [page, setPage] = useState('home');
   const [publicForm, setPublicForm] = useState(initialForm);
   const [authorityCredentials, setAuthorityCredentials] = useState(authorityForm);
-  const [complaints, setComplaints] = useState(readStoredComplaints);
+  const [complaints, setComplaints] = useState([]);
   const [activeUser, setActiveUser] = useState(null);
   const [activeAuthority, setActiveAuthority] = useState(null);
   const [message, setMessage] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, 'complaints'),
-      (snapshot) => {
-        const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-        setComplaints(data);
-        broadcastComplaints(data);
-      },
-      (error) => {
-        console.error('Firestore unavailable, using local fallback.', error);
-        const localComplaints = readStoredComplaints();
-        setComplaints(localComplaints);
-        setMessage('Live database sync is unavailable, so reports are being shown from local storage.');
-      }
-    );
+    const unsubscribe = onSnapshot(collection(db, 'complaints'), (snapshot) => {
+      const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      setComplaints(data);
+    });
 
-    if (typeof window === 'undefined') {
-      return () => unsubscribe();
-    }
-
-    const handleStorageSync = (event) => {
-      if (event.key !== STORAGE_KEY || !event.newValue) return;
-      try {
-        const data = JSON.parse(event.newValue);
-        if (Array.isArray(data)) {
-          setComplaints(data);
-        }
-      } catch {
-        // Ignore invalid stored data.
-      }
-    };
-
-    const handleBroadcast = (event) => {
-      if (Array.isArray(event.detail)) {
-        setComplaints(event.detail);
-      }
-    };
-
-    const handleChannelMessage = (event) => {
-      if (Array.isArray(event.data)) {
-        setComplaints(event.data);
-      }
-    };
-
-    const channel = 'BroadcastChannel' in window ? new window.BroadcastChannel(CHANNEL_NAME) : null;
-    channel?.addEventListener('message', handleChannelMessage);
-
-    window.addEventListener('storage', handleStorageSync);
-    window.addEventListener('footpath-complaints-updated', handleBroadcast);
-
-    return () => {
-      unsubscribe();
-      channel?.removeEventListener('message', handleChannelMessage);
-      channel?.close();
-      window.removeEventListener('storage', handleStorageSync);
-      window.removeEventListener('footpath-complaints-updated', handleBroadcast);
-    };
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -121,6 +38,7 @@ function App() {
       complaints.forEach((item) => {
         if (item.status === 'Sent') {
           updateDoc(doc(db, 'complaints', item.id), { status: 'Received' });
+          setComplaints((current) => current.map((entry) => (entry.id === item.id ? { ...entry, status: 'Received' } : entry)));
         }
       });
     }
@@ -176,12 +94,8 @@ function App() {
       createdAt: new Date().toLocaleString()
     };
 
-    const nextComplaints = [payload, ...readStoredComplaints()];
-    broadcastComplaints(nextComplaints);
-    setComplaints(nextComplaints);
-
     addDoc(collection(db, 'complaints'), payload)
-      .catch(() => setMessage('Could not save to the database. The report is still visible locally for the current session.'));
+      .catch(() => setMessage('Could not save to the database.'));
     setPublicForm((current) => ({ ...current, description: '', beforeImage: '' }));
     setMessage('');
     setStatusMessage('Your encroachment report has been sent to the authority team.');
@@ -204,22 +118,16 @@ function App() {
   };
 
   const resolveComplaint = (id) => {
-    const updatedComplaints = complaints.map((item) => {
-      if (item.id !== id) return item;
-      return {
-        ...item,
-        status: 'Resolved',
-        adminNote: 'Issue resolved and shared with the resident.'
-      };
-    });
-
-    setComplaints(updatedComplaints);
-    broadcastComplaints(updatedComplaints);
+    setComplaints((current) => current.map((item) => (item.id === id ? {
+      ...item,
+      status: 'Resolved',
+      adminNote: 'Issue resolved and shared with the resident.'
+    } : item)));
 
     updateDoc(doc(db, 'complaints', id), {
       status: 'Resolved',
       adminNote: 'Issue resolved and shared with the resident.'
-    }).catch(() => setMessage('The report was updated locally, but the live database could not be reached.'));
+    }).catch(() => setMessage('The report could not be updated in the database right now.'));
     setStatusMessage('The report has been marked resolved.');
   };
 

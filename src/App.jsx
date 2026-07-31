@@ -14,13 +14,39 @@ const authorityForm = {
   adminId: ''
 };
 
+const loadSessionState = () => {
+  if (typeof window === 'undefined') return { page: 'home', activeAuthority: null };
+
+  try {
+    const stored = window.sessionStorage.getItem('footpath-encroachment-state');
+    if (!stored) return { page: 'home', activeAuthority: null };
+    const parsed = JSON.parse(stored);
+    return {
+      page: parsed.page || 'home',
+      activeAuthority: parsed.activeAuthority || null
+    };
+  } catch {
+    return { page: 'home', activeAuthority: null };
+  }
+};
+
+const saveSessionState = (state) => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.setItem('footpath-encroachment-state', JSON.stringify(state));
+  } catch {
+    // ignore storage errors
+  }
+};
+
 function App() {
-  const [page, setPage] = useState('home');
+  const initialState = loadSessionState();
+  const [page, setPage] = useState(initialState.page);
   const [publicForm, setPublicForm] = useState(initialForm);
   const [authorityCredentials, setAuthorityCredentials] = useState(authorityForm);
   const [complaints, setComplaints] = useState([]);
   const [activeUser, setActiveUser] = useState(null);
-  const [activeAuthority, setActiveAuthority] = useState(null);
+  const [activeAuthority, setActiveAuthority] = useState(initialState.activeAuthority);
   const [message, setMessage] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
 
@@ -142,6 +168,10 @@ function App() {
     reader.readAsDataURL(file);
     
   };
+
+  useEffect(() => {
+    saveSessionState({ page, activeAuthority });
+  }, [page, activeAuthority]);
 
   const resetToHome = () => {
     setPage('home');

@@ -66,7 +66,7 @@ function App() {
     setPage('public-report');
   };
 
-  const handlePublicSubmit = (event) => {
+  const handlePublicSubmit = async (event) => {
     event.preventDefault();
     const trimmedName = publicForm.name.trim();
     const trimmedPhone = publicForm.phone.trim();
@@ -83,7 +83,6 @@ function App() {
     }
 
     const payload = {
-      id: Date.now(),
       name: trimmedName,
       phone: trimmedPhone,
       encroachmentType: publicForm.encroachmentType,
@@ -94,12 +93,17 @@ function App() {
       createdAt: new Date().toLocaleString()
     };
 
-    addDoc(collection(db, 'complaints'), payload)
-      .catch(() => setMessage('Could not save to the database.'));
-    setPublicForm((current) => ({ ...current, description: '', beforeImage: '' }));
-    setMessage('');
-    setStatusMessage('Your encroachment report has been sent to the authority team.');
-    setPage('public-status');
+    try {
+      const docRef = await addDoc(collection(db, 'complaints'), payload);
+      setComplaints((current) => [{ id: docRef.id, ...payload }, ...current]);
+      setPublicForm(initialForm);
+      setMessage('');
+      setStatusMessage('Your encroachment report has been sent to the authority team.');
+      setPage('public-status');
+    } catch (error) {
+      console.error('Failed to submit report:', error);
+      setMessage('Could not save to the database. Please try again.');
+    }
   };
 
   const handleAuthorityLogin = (event) => {

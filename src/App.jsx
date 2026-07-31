@@ -21,9 +21,11 @@ const loadSessionState = () => {
     const stored = window.sessionStorage.getItem('footpath-encroachment-state');
     if (!stored) return { page: 'home', activeAuthority: null };
     const parsed = JSON.parse(stored);
+    const page = parsed.page || 'home';
+    const activeAuthority = parsed.activeAuthority || null;
     return {
-      page: parsed.page || 'home',
-      activeAuthority: parsed.activeAuthority || null
+      page: page === 'authority-dashboard' && !activeAuthority ? 'home' : page,
+      activeAuthority
     };
   } catch {
     return { page: 'home', activeAuthority: null };
@@ -138,9 +140,11 @@ function App() {
       return;
     }
 
-    setActiveAuthority({ name: trimmedName, adminId: trimmedAdminId });
+    const authority = { name: trimmedName, adminId: trimmedAdminId };
+    setActiveAuthority(authority);
     setMessage('');
     setPage('authority-dashboard');
+    saveSessionState({ page: 'authority-dashboard', activeAuthority: authority });
   };
 
   const resolveComplaint = (id) => {
@@ -181,6 +185,7 @@ function App() {
     setActiveAuthority(null);
     setMessage('');
     setStatusMessage('');
+    saveSessionState({ page: 'home', activeAuthority: null });
   };
 
   return (

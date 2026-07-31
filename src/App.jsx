@@ -1,16 +1,30 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { db, collection, addDoc, onSnapshot, updateDoc, doc } from './firebase';
-import LocationPicker from './LocationPicker';
 
 const STORAGE_KEY = 'footpath-encroachments-demo';
+
+const readStoredComplaints = () => {
+  if (typeof window === 'undefined') return [];
+
+  try {
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
+};
+
+const persistComplaints = (items) => {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+};
 
 const initialForm = {
   name: '',
   phone: '',
   encroachmentType: 'Vehicle Parking',
   description: '',
-  beforeImage: '',
-  location: null
+  beforeImage: ''
 };
 
 const authorityForm = {
@@ -22,17 +36,27 @@ function App() {
   const [page, setPage] = useState('home');
   const [publicForm, setPublicForm] = useState(initialForm);
   const [authorityCredentials, setAuthorityCredentials] = useState(authorityForm);
-  const [complaints, setComplaints] = useState([]);
+  const [complaints, setComplaints] = useState(readStoredComplaints);
   const [activeUser, setActiveUser] = useState(null);
   const [activeAuthority, setActiveAuthority] = useState(null);
   const [message, setMessage] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'complaints'), (snapshot) => {
-      const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-      setComplaints(data);
-    });
+    const unsubscribe = onSnapshot(
+      collection(db, 'complaints'),
+      (snapshot) => {
+        const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        setComplaints(data);
+        persistComplaints(data);
+      },
+      (error) => {
+        console.error('Firestore unavailable, using local fallback.', error);
+        const localComplaints = readStoredComplaints();
+        setComplaints(localComplaints);
+        setMessage('Live database sync is unavailable, so reports are being shown from local storage.');
+      }
+    );
 
     return () => unsubscribe();
   }, []);
@@ -75,8 +99,8 @@ function App() {
     const trimmedPhone = publicForm.phone.trim();
     const description = publicForm.description.trim();
 
-    if (!trimmedName || !trimmedPhone || !description || !publicForm.beforeImage || !publicForm.location) {
-      setMessage('Please complete all fields, pick a location on the map, and upload a before image.');
+    if (!trimmedName || !trimmedPhone || !description || !publicForm.beforeImage) {
+      setMessage('Please complete all fields and upload a before image.');
       return;
     }
 
@@ -92,14 +116,17 @@ function App() {
       encroachmentType: publicForm.encroachmentType,
       description,
       beforeImage: publicForm.beforeImage,
-      location: publicForm.location,
       status: 'Sent',
       adminNote: 'Awaiting review by GVMC authority.',
       createdAt: new Date().toLocaleString()
     };
 
+    const nextComplaints = [payload, ...readStoredComplaints()];
+    persistComplaints(nextComplaints);
+    setComplaints(nextComplaints);
+
     addDoc(collection(db, 'complaints'), payload)
-      .catch(() => setMessage('Could not save to the database.'));
+      .catch(() => setMessage('Could not save to the database. The report is still visible locally for the current session.'));
     setPublicForm((current) => ({ ...current, description: '', beforeImage: '' }));
     setMessage('');
     setStatusMessage('Your encroachment report has been sent to the authority team.');
@@ -122,10 +149,22 @@ function App() {
   };
 
   const resolveComplaint = (id) => {
+    const updatedComplaints = complaints.map((item) => {
+      if (item.id !== id) return item;
+      return {
+        ...item,
+        status: 'Resolved',
+        adminNote: 'Issue resolved and shared with the resident.'
+      };
+    });
+
+    setComplaints(updatedComplaints);
+    persistComplaints(updatedComplaints);
+
     updateDoc(doc(db, 'complaints', id), {
       status: 'Resolved',
       adminNote: 'Issue resolved and shared with the resident.'
-    });
+    }).catch(() => setMessage('The report was updated locally, but the live database could not be reached.'));
     setStatusMessage('The report has been marked resolved.');
   };
 
@@ -225,10 +264,6 @@ function App() {
               <textarea maxLength="50" value={publicForm.description} onChange={(event) => setPublicForm((current) => ({ ...current, description: event.target.value }))} placeholder="Describe the issue in 50 characters or fewer" />
               <small>{publicForm.description.length}/50 characters</small>
             </label>
-            <LocationPicker
-              value={publicForm.location}
-              onChange={(location) => setPublicForm((current) => ({ ...current, location }))}
-            />
             <label>
               Before Image Upload
               <input type="file" accept="image/*" onChange={handleImageUpload} />
@@ -253,9 +288,6 @@ function App() {
                 <article key={item.id} className="report-card">
                   <div className="report-row"><strong>Type:</strong> {item.encroachmentType}</div>
                   <div className="report-row"><strong>Description:</strong> {item.description}</div>
-                  {item.location ? (
-                    <div className="report-row"><strong>Location:</strong> {item.location.lat.toFixed(4)}, {item.location.lng.toFixed(4)}</div>
-                  ) : null}
                   <div className="report-row"><strong>Status:</strong> {item.status}</div>
                   <div className="report-row"><strong>Authority Note:</strong> {item.adminNote}</div>
                   {item.beforeImage ? <img className="preview-image" src={item.beforeImage} alt="Before upload" /> : null}
@@ -299,9 +331,6 @@ function App() {
                   <div className="report-row"><strong>Phone:</strong> {item.phone}</div>
                   <div className="report-row"><strong>Type:</strong> {item.encroachmentType}</div>
                   <div className="report-row"><strong>Issue:</strong> {item.description}</div>
-                  {item.location ? (
-                    <div className="report-row"><strong>Location:</strong> {item.location.lat.toFixed(4)}, {item.location.lng.toFixed(4)}</div>
-                  ) : null}
                   <div className="report-row"><strong>Status:</strong> {item.status}</div>
                   <div className="report-row"><strong>Note:</strong> {item.adminNote}</div>
                   {item.beforeImage ? <img className="preview-image" src={item.beforeImage} alt="Complaint preview" /> : null}

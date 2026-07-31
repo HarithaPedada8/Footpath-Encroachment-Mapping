@@ -1,0 +1,4 @@
+- Project: Footpath Encroachment Mapping prototype
+- Stack: React + Vite
+- Goal: provide a simple public-to-authority complaint workflow for encroachment reporting
+- Notes: keep UI focused on the requested home page, public login, authority login, and complaint tracking experience

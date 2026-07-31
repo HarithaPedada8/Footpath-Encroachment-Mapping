@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { db, collection, addDoc, onSnapshot, updateDoc, doc } from './firebase';
 
 const STORAGE_KEY = 'footpath-encroachments-demo';
+const CHANNEL_NAME = 'footpath-encroachments-channel';
 
 const readStoredComplaints = () => {
   if (typeof window === 'undefined') return [];
@@ -17,6 +18,20 @@ const readStoredComplaints = () => {
 const persistComplaints = (items) => {
   if (typeof window === 'undefined') return;
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+};
+
+const broadcastComplaints = (items) => {
+  if (typeof window === 'undefined') return;
+
+  persistComplaints(items);
+
+  if ('BroadcastChannel' in window) {
+    const channel = new window.BroadcastChannel(CHANNEL_NAME);
+    channel.postMessage(items);
+    channel.close();
+  }
+
+  window.dispatchEvent(new CustomEvent('footpath-complaints-updated', { detail: items }));
 };
 
 const initialForm = {
@@ -48,7 +63,7 @@ function App() {
       (snapshot) => {
         const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
         setComplaints(data);
-        persistComplaints(data);
+        broadcastComplaints(data);
       },
       (error) => {
         console.error('Firestore unavailable, using local fallback.', error);
@@ -58,7 +73,47 @@ function App() {
       }
     );
 
-    return () => unsubscribe();
+    if (typeof window === 'undefined') {
+      return () => unsubscribe();
+    }
+
+    const handleStorageSync = (event) => {
+      if (event.key !== STORAGE_KEY || !event.newValue) return;
+      try {
+        const data = JSON.parse(event.newValue);
+        if (Array.isArray(data)) {
+          setComplaints(data);
+        }
+      } catch {
+        // Ignore invalid stored data.
+      }
+    };
+
+    const handleBroadcast = (event) => {
+      if (Array.isArray(event.detail)) {
+        setComplaints(event.detail);
+      }
+    };
+
+    const handleChannelMessage = (event) => {
+      if (Array.isArray(event.data)) {
+        setComplaints(event.data);
+      }
+    };
+
+    const channel = 'BroadcastChannel' in window ? new window.BroadcastChannel(CHANNEL_NAME) : null;
+    channel?.addEventListener('message', handleChannelMessage);
+
+    window.addEventListener('storage', handleStorageSync);
+    window.addEventListener('footpath-complaints-updated', handleBroadcast);
+
+    return () => {
+      unsubscribe();
+      channel?.removeEventListener('message', handleChannelMessage);
+      channel?.close();
+      window.removeEventListener('storage', handleStorageSync);
+      window.removeEventListener('footpath-complaints-updated', handleBroadcast);
+    };
   }, []);
 
   useEffect(() => {
@@ -122,7 +177,7 @@ function App() {
     };
 
     const nextComplaints = [payload, ...readStoredComplaints()];
-    persistComplaints(nextComplaints);
+    broadcastComplaints(nextComplaints);
     setComplaints(nextComplaints);
 
     addDoc(collection(db, 'complaints'), payload)
@@ -159,7 +214,7 @@ function App() {
     });
 
     setComplaints(updatedComplaints);
-    persistComplaints(updatedComplaints);
+    broadcastComplaints(updatedComplaints);
 
     updateDoc(doc(db, 'complaints', id), {
       status: 'Resolved',
